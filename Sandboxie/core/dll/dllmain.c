@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
- * Copyright 2020-2023 David Xanatos, xanasoft.com
+ * Copyright 2020-2024 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -117,7 +117,6 @@ ULONG Dll_Windows = 0;
 
 const UCHAR *SbieDll_Version = MY_VERSION_STRING;
 
-BOOLEAN Dll_SbieTrace = FALSE;
 
 //extern ULONG64 __security_cookie = 0;
 
@@ -498,6 +497,9 @@ _FX void Dll_InitInjected(void)
         ok = Proc_Init();
 
     if (ok)
+        ok = Kernel_Init();
+
+    if (ok)
         ok = Gui_InitConsole1();
 
     if (ok) // Note: Ldr_Init may cause rpcss to be started early
@@ -515,6 +517,19 @@ _FX void Dll_InitInjected(void)
     if (! ok) {
         SbieApi_Log(2304, Dll_ImageName);
         ExitProcess(-1);
+    }
+
+    //
+    // Setup soft resource restrictions
+    //
+
+    WCHAR str[32];
+    if (NT_SUCCESS(SbieApi_QueryConfAsIs(NULL, L"CpuAffinityMask", 0, str, sizeof(str) - sizeof(WCHAR))) && str[0] == L'0' && (str[1] == L'x' || str[1] == L'X')){
+
+        WCHAR* endptr;
+        KAFFINITY AffinityMask = wcstoul(str + 2, &endptr, 16); // note we only support core 0-31 as wcstoull is not exported by ntdll
+        if (AffinityMask)
+            NtSetInformationProcess(GetCurrentProcess(), ProcessAffinityMask, &AffinityMask, sizeof(KAFFINITY));
     }
 
     Dll_InitComplete = TRUE;
@@ -535,13 +550,6 @@ _FX void Dll_InitExeEntry(void)
     // Dll_InitInjected is executed by Ldr_Inject_Entry after NTDLL has
     // finished initializing the process (loading static import DLLs, etc)
     //
-
-    //
-    // on Windows 8, we can't load advapi32.dll during Scm_SecHostDll
-    //
-    //
-
-    Scm_SecHostDll_W8();
 
     //
     // hook DefWindowProc on Windows 7, after USER32 has been initialized
@@ -602,9 +610,7 @@ _FX void Dll_InitExeEntry(void)
     // once we return here the process images entrypoint will be called
     //
 
-#ifdef WITH_DEBUG
-    DbgTrace("Dll_InitExeEntry completed");
-#endif
+    Trace_Entry();
     Dll_EntryComplete = TRUE;
 }
 
